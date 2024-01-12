@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.convert.converter.Converter
 import org.springframework.security.authentication.AbstractAuthenticationToken
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -23,8 +24,12 @@ import org.springframework.security.core.userdetails.User
 import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.security.oauth2.core.AuthorizationGrantType
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException
+import org.springframework.security.oauth2.core.OAuth2Error
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes
 import org.springframework.security.oauth2.core.OAuth2Token
 import org.springframework.security.oauth2.jwt.Jwt
+import org.springframework.security.oauth2.jwt.JwtClaimNames
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.jwt.JwtEncoder
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder
@@ -38,9 +43,11 @@ import org.springframework.security.oauth2.server.authorization.config.annotatio
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings
 import org.springframework.security.oauth2.server.authorization.token.DelegatingOAuth2TokenGenerator
+import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext
 import org.springframework.security.oauth2.server.authorization.token.JwtGenerator
 import org.springframework.security.oauth2.server.authorization.token.OAuth2AccessTokenGenerator
 import org.springframework.security.oauth2.server.authorization.token.OAuth2RefreshTokenGenerator
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator
 import org.springframework.security.oauth2.server.authorization.web.authentication.OAuth2RefreshTokenAuthenticationConverter
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
@@ -77,10 +84,24 @@ class SecurityConfig(
             .tokenGenerator(tokenGenerator)
             .tokenEndpoint { tokenEndpoint ->
                 tokenEndpoint
-                    .accessTokenRequestConverter(OtpCodeGrantAuthenticationConverter())
-                    .accessTokenRequestConverter(OAuth2RefreshTokenAuthenticationConverter())
-                    .authenticationProvider(otpCodeGrantAuthenticationProvider)
-                    .authenticationProvider(customOAuth2RefreshTokenAuthenticationProvider)
+                    .accessTokenRequestConverters { accessTokenRequestConverters ->
+                        accessTokenRequestConverters.clear()
+                        accessTokenRequestConverters.addAll(
+                            listOf(
+                                OtpCodeGrantAuthenticationConverter(),
+                                OAuth2RefreshTokenAuthenticationConverter(),
+                            )
+                        )
+                    }
+                    .authenticationProviders { authenticationProviders ->
+                        authenticationProviders.clear()
+                        authenticationProviders.addAll(
+                            listOf(
+                                otpCodeGrantAuthenticationProvider,
+                                customOAuth2RefreshTokenAuthenticationProvider,
+                            )
+                        )
+                    }
             }
 
         // for resource server
@@ -200,12 +221,32 @@ class SecurityConfig(
     fun tokenGenerator(
         jwtEncoder: JwtEncoder,
     ): OAuth2TokenGenerator<OAuth2Token> {
-        val jwtGenerator = CustomJwtGenerator(jwtEncoder)
-        val accessTokenGenerator = OAuth2AccessTokenGenerator()
-        val refreshTokenGenerator = OAuth2RefreshTokenGenerator()
+        val jwtGenerator = CustomJwtGenerator(jwtEncoder) { context ->
+            val authentication = context.getPrincipal() as UsernamePasswordAuthenticationToken
+
+            if (authentication !is UsernamePasswordAuthenticationToken) {
+                throw OAuth2AuthenticationException(
+                    OAuth2Error(
+                        OAuth2ErrorCodes.SERVER_ERROR,
+                        "Invalid Authorization Type", null
+                    )
+                )
+            }
+
+            val claimsBuilder = context.claims
+
+            claimsBuilder.claims { claims ->
+                claims.remove(JwtClaimNames.AUD)
+                claims.remove(JwtClaimNames.ISS)
+                claims.remove(JwtClaimNames.NBF)
+                claims.remove("client_id")
+                claims.put(JwtClaimNames.SUB, authentication.name)
+                claims.put("authorities", authentication.authorities.toList().map { it.toString() })
+            }
+        }
 
         return DelegatingOAuth2TokenGenerator(
-            jwtGenerator, accessTokenGenerator, refreshTokenGenerator
+            jwtGenerator
         )
     }
 }

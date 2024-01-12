@@ -6,6 +6,7 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationGrantAuthenticationToken
 
 class OtpCodeGrantAuthenticationToken(
+    val phoneNumber: String,
     val code: String,
     clientPrincipal: Authentication,
     additionalParameters: Map<String, Any?>?

@@ -23,8 +23,9 @@ class OtpCodeGrantAuthenticationConverter: AuthenticationConverter {
         val parameters = request.parameterMap
 
         // code (REQUIRED)
-        val code = parameters[OAuth2ParameterNames.CODE]?.get(0)
-        if (code.isNullOrBlank()) {
+        val phoneNumber = parameters["phoneNumber"]?.get(0)
+        val code = parameters["code"]?.get(0)
+        if (phoneNumber.isNullOrBlank() || code.isNullOrBlank()) {
             throw OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
         }
 
@@ -39,6 +40,6 @@ class OtpCodeGrantAuthenticationConverter: AuthenticationConverter {
             }
         }
 
-        return OtpCodeGrantAuthenticationToken(code, clientPrincipal, additionalParameters);
+        return OtpCodeGrantAuthenticationToken(phoneNumber, code, clientPrincipal, additionalParameters);
     }
 }

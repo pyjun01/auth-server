@@ -33,17 +33,17 @@ import org.springframework.util.StringUtils
 
 /**
  * JwtGenerator 커스텀 버전
- * :78만 추가함
  */
 class CustomJwtGenerator(
-    private val jwtEncoder: JwtEncoder
-) : OAuth2TokenGenerator<Jwt?> {
-    private var jwtCustomizer: OAuth2TokenCustomizer<JwtEncodingContext>? = null
+    private val jwtEncoder: JwtEncoder,
+    private var jwtCustomizer: OAuth2TokenCustomizer<JwtEncodingContext>,
+) : OAuth2TokenGenerator<Jwt> {
 
     @Nullable
     override fun generate(context: OAuth2TokenContext): Jwt? {
         if (
             context.tokenType == null ||
+            // support accesss_token and refresh_token 원본은 access_token만 받음
             !(OAuth2TokenType.ACCESS_TOKEN == context.tokenType ||
             OAuth2TokenType.REFRESH_TOKEN == context.tokenType)
         ) {
@@ -58,7 +58,9 @@ class CustomJwtGenerator(
             issuer = context.authorizationServerContext.issuer
         }
         val registeredClient = context.registeredClient
+
         val issuedAt = Instant.now()
+        // expiresAt 세팅
         val expiresAt = issuedAt.plus(when(context.tokenType) {
             OAuth2TokenType.REFRESH_TOKEN -> registeredClient.tokenSettings.refreshTokenTimeToLive
             OAuth2TokenType.ACCESS_TOKEN -> registeredClient.tokenSettings.accessTokenTimeToLive
@@ -76,17 +78,14 @@ class CustomJwtGenerator(
             .issuedAt(issuedAt)
             .expiresAt(expiresAt)
             .id(UUID.randomUUID().toString())
-            // add authorities
-            .claim("authorities", listOf<String>("ROLE_DRIVER"))
-        claimsBuilder.notBefore(issuedAt)
-
+            .notBefore(issuedAt)
         if (!CollectionUtils.isEmpty(context.authorizedScopes)) {
             claimsBuilder.claim(OAuth2ParameterNames.SCOPE, context.authorizedScopes)
         }
 
         val jwsHeaderBuilder = JwsHeader.with(jwsAlgorithm)
+
         if (jwtCustomizer != null) {
-            // @formatter:off
             val jwtContextBuilder = JwtEncodingContext.with(jwsHeaderBuilder, claimsBuilder)
                 .registeredClient(context.registeredClient)
                 .principal(context.getPrincipal())
@@ -100,31 +99,14 @@ class CustomJwtGenerator(
             if (context.getAuthorizationGrant<Authentication?>() != null) {
                 jwtContextBuilder.authorizationGrant(context.getAuthorizationGrant())
             }
-            if (OidcParameterNames.ID_TOKEN == context.tokenType.value) {
-                val sessionInformation =
-                    context.get(SessionInformation::class.java)
-                if (sessionInformation != null) {
-                    jwtContextBuilder.put(SessionInformation::class.java, sessionInformation)
-                }
-            }
-            // @formatter:on
+
             val jwtContext = jwtContextBuilder.build()
             jwtCustomizer!!.customize(jwtContext)
         }
+
         val jwsHeader = jwsHeaderBuilder.build()
         val claims = claimsBuilder.build()
-        return jwtEncoder.encode(JwtEncoderParameters.from(jwsHeader, claims))
-    }
 
-    /**
-     * Sets the [OAuth2TokenCustomizer] that customizes the
-     * [JWS headers][JwtEncodingContext.getJwsHeader] and/or
-     * [claims][JwtEncodingContext.getClaims] for the generated [Jwt].
-     *
-     * @param jwtCustomizer the [OAuth2TokenCustomizer] that customizes the headers and/or claims for the generated `Jwt`
-     */
-    fun setJwtCustomizer(jwtCustomizer: OAuth2TokenCustomizer<JwtEncodingContext>?) {
-        Assert.notNull(jwtCustomizer, "jwtCustomizer cannot be null")
-        this.jwtCustomizer = jwtCustomizer
+        return jwtEncoder.encode(JwtEncoderParameters.from(jwsHeader, claims))
     }
 }
