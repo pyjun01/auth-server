@@ -30,6 +30,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2RefreshTokenAuthenticationProvider
 import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository
@@ -41,6 +42,7 @@ import org.springframework.security.oauth2.server.authorization.token.JwtGenerat
 import org.springframework.security.oauth2.server.authorization.token.OAuth2AccessTokenGenerator
 import org.springframework.security.oauth2.server.authorization.token.OAuth2RefreshTokenGenerator
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator
+import org.springframework.security.oauth2.server.authorization.web.authentication.OAuth2RefreshTokenAuthenticationConverter
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
 import org.springframework.security.provisioning.InMemoryUserDetailsManager
 import org.springframework.security.web.SecurityFilterChain
@@ -61,11 +63,11 @@ class SecurityConfig(
         registeredClientRepository: RegisteredClientRepository,
         authorizationService: OAuth2AuthorizationService,
         userDetailsService: UserDetailsService,
-        authenticationConverter: AuthenticationConverter,
         tokenGenerator: OAuth2TokenGenerator<OAuth2Token>,
     ): SecurityFilterChain {
 //        val tokenGenerator = JwtGenerator(jwtEncoder);
         val otpCodeGrantAuthenticationProvider = OtpCodeGrantAuthenticationProvider(authorizationService, tokenGenerator)
+        val customOAuth2RefreshTokenAuthenticationProvider = CustomOAuth2RefreshTokenAuthenticationProvider(authorizationService, tokenGenerator)
 
         // for authorization server
         OAuth2AuthorizationServerConfigurer()
@@ -75,15 +77,17 @@ class SecurityConfig(
             .tokenGenerator(tokenGenerator)
             .tokenEndpoint { tokenEndpoint ->
                 tokenEndpoint
-                    .accessTokenRequestConverter(authenticationConverter)
+                    .accessTokenRequestConverter(OtpCodeGrantAuthenticationConverter())
+                    .accessTokenRequestConverter(OAuth2RefreshTokenAuthenticationConverter())
                     .authenticationProvider(otpCodeGrantAuthenticationProvider)
+                    .authenticationProvider(customOAuth2RefreshTokenAuthenticationProvider)
             }
 
         // for resource server
         http
             .authorizeHttpRequests { auth -> auth
                 .requestMatchers("/v1/users/otp").hasAnyAuthority("DRIVER_APP")
-                .requestMatchers("/v1/users/me").authenticated()
+                .requestMatchers("/v1/users/me").hasAnyRole("DRIVER")
                 .anyRequest().authenticated()
             }
             .authenticationProvider(basicAuthenticationProvider(userDetailsService))
@@ -196,7 +200,7 @@ class SecurityConfig(
     fun tokenGenerator(
         jwtEncoder: JwtEncoder,
     ): OAuth2TokenGenerator<OAuth2Token> {
-        val jwtGenerator = JwtGenerator(jwtEncoder)
+        val jwtGenerator = CustomJwtGenerator(jwtEncoder)
         val accessTokenGenerator = OAuth2AccessTokenGenerator()
         val refreshTokenGenerator = OAuth2RefreshTokenGenerator()
 

@@ -9,7 +9,6 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.web.authentication.AuthenticationConverter;
 import org.springframework.stereotype.Component
 
-@Component
 class OtpCodeGrantAuthenticationConverter: AuthenticationConverter {
     override fun convert(request: HttpServletRequest): Authentication? {
         // grant_type
