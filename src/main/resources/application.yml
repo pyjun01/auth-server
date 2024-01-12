@@ -1,0 +1,18 @@
+server:
+  port: 3333
+
+logging:
+  level:
+    org.springframework.security: trace
+
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  security:
+    oauth2:
+
+oauth2:
+  clients:
+    - appId: driver-app
+      secret: driver-app-secret
+      authority: DRIVER_APP
